@@ -30,20 +30,14 @@ class BarcodeApp(QMainWindow, partsdialog.Ui_MainWindow):
 		self.move(qtRectangle.topLeft())
 
 		# What we do after WOID is scanned.
-		self.txtWOID.returnPressed.connect(self.woid_after_update)
+		self.txtWOBOMID.returnPressed.connect(self.wobomid_after_update)
 		# What we do after Part is scanned.
-		self.txtPart.returnPressed.connect(self.part_after_update)
+
 		# What we do after clock # is scanned.
 		self.txtClockID.returnPressed.connect(self.clockid_after_update)
 
 		# Event for enter btn click.
 		self.btnEnter.clicked.connect(self.on_click)
-
-		# Default will show value of 1 for slider selection.
-		self.lblQty.setText('1')
-
-		# After changing slider value, update label.
-		self.slQty.valueChanged.connect(self.show_lbl_qty)
 
 		# Clear values from field. Reset focus to WOID.
 		self.btnClear.clicked.connect(self.clearForm)
@@ -51,11 +45,26 @@ class BarcodeApp(QMainWindow, partsdialog.Ui_MainWindow):
 		# On load, we're setting focus to the clockID
 		self.txtClockID.setFocus()
 
+		self.lblQty.setText('')
+
 		# Needed to intially define the message on load to be used later.
 		BarcodeApp.message = ''
 
 		# Call clock at start of program.
 		self.clock()
+
+		self.btn1.clicked.connect(self.btn1Click)
+		self.btn2.clicked.connect(self.btn2Click)
+		self.btn3.clicked.connect(self.btn3Click)
+		self.btn4.clicked.connect(self.btn4Click)
+		self.btn5.clicked.connect(self.btn5Click)
+		self.btn6.clicked.connect(self.btn6Click)
+		self.btn7.clicked.connect(self.btn7Click)
+		self.btn8.clicked.connect(self.btn8Click)
+		self.btn9.clicked.connect(self.btn9Click)
+		self.btn0.clicked.connect(self.btn0Click)
+		self.btnClearQty.clicked.connect(self.clearqtyclick)
+
 
 	# Function for connecting to SQL server.
 	def connect(self):
@@ -87,7 +96,7 @@ class BarcodeApp(QMainWindow, partsdialog.Ui_MainWindow):
 			BarcodeApp.message = "You are not on the list of current users."
 			return
 
-		self.txtWOID.setFocus()
+		self.txtWOBOMID.setFocus()
 
 	def get_employee_info(self):
 
@@ -111,62 +120,36 @@ class BarcodeApp(QMainWindow, partsdialog.Ui_MainWindow):
 
 	# Function for moving to Part textbox after WOID has been scanned.
 	# Return WOID information so the user can confirm.
-	def woid_after_update(self):
+	def wobomid_after_update(self):
 
-		global WOID
+		global WOID, ProductID, ProductCode, WOBOMID
 
-		WOID = self.txtWOID.text()
+		WOBOMID = self.txtWOBOMID.text()
 
 		self.connect()
 
-		cursor.execute("SELECT [Work Order].[WOID], [Work Order].[WO Status], [Products].[Product Code] AS Name "
-			"FROM [Work Order] INNER JOIN [Products] ON "
-			"[Work Order].[ProductID] = [Products].[ID]"
-			"WHERE ([Work Order].[WO Status] = 2 OR [Work Order].[WO Status] = 3) AND "
-			"([Work Order].[WOID] = ?)", (WOID))
+		cursor.execute("SELECT [Work Order BOM].[ID] AS WOBOMID, [Work Order].[WOID], [Work Order].[WO Status], "
+			"[Products].[Product Code] AS WOName, [Products_1].[Product Code] AS MaterialName, [Products_1].[ID] AS ProductID "
+			"FROM [Work Order] INNER JOIN [Products] ON [Work Order].[ProductID] = [Products].[ID] INNER JOIN "
+			"[Work Order BOM] ON [Work Order].[WOID] = [Work Order BOM].[WOID] INNER JOIN Products AS Products_1 "
+			"ON [Work Order BOM].[ProductID] = [Products_1].[ID] "
+			"WHERE ([Work Order].[WO Status] = 2 OR [Work Order].[WO Status] = 3) AND ([Work Order BOM].[ID] = ?)", (WOBOMID))
 
 		row = cursor.fetchone()
 
 		if row:
-			self.lblWOIDReturn.setText(row.Name)
+			self.lblWOIDReturn.setText(row.WOName)
+			self.lblPartReturn.setText(row.MaterialName)
+			ProductID = int(row.ProductID)
+			WOID = int(row.WOID)
+			ProductCode = row.MaterialName
 		else:
-			self.txtWOID.clear()
-			self.txtWOID.setFocus()
+			self.txtWOBOMID.clear()
+			self.txtWOBOMID.setFocus()
 			self.lblWOIDReturn.setText('')
 			return
 
-		print(row.Name)
-
-		self.txtPart.setFocus()
-
-		self.disconnect()
-
-	# Function for returning information on Product, like above.
-
-	def part_after_update(self):
-
-		global ProductID, ProductCode
-
-		ProductID = self.txtPart.text()
-
-		self.connect()
-
-		cursor.execute("SELECT [Products].[ID], [Products].[Product Code] AS Name "
-			"FROM [Products] "
-			"WHERE [Products].[ID] = ?", (ProductID))
-
-		row = cursor.fetchone()
-
-		if row:
-			self.lblPartReturn.setText(row.Name)
-			ProductCode = row.Name
-		else:
-			self.txtPart.clear()
-			self.txtPart.setFocus()
-			self.lblPartReturn.setText('')
-			return
-
-		print(row.Name)
+		self.lblQty.setFocus()
 
 		self.disconnect()
 
@@ -180,25 +163,29 @@ class BarcodeApp(QMainWindow, partsdialog.Ui_MainWindow):
 
 	def on_click(self):
 
-		global rv, Quantity
+		global rv
 
 		if self.validate() == False:
 			return
 
-		Quantity = self.slQty.value()
+		#Quantity = self.slQty.value()
+		#Quantity = int(self.lblQty.text())
 
 		self.connect()
 
 		# SQL string for stored procedure with a return value.
 		sql = """\
 		DECLARE @outRV int;
-		EXEC @outRV = [dbo].[sprocFIFOIssueInventory] @pProductID = ?, @pQtyToIssue = ?, @pWOID = ?, @pEmpID = ?;
+		EXEC @outRV = [dbo].[sprocFIFOIssueInventory] @pProductID = ?, @pQtyToIssue = ?, @pWOBOMID = ?, @pEmpID = ?;
 		SELECT @outRV AS RV;
 		"""
 
 		# Parameters to feed into the stored procedure.
-		params = (ProductID, Quantity, WOID, EmpID, )
-		cursor.execute(sql, params)
+		params = (ProductID, Quantity, WOBOMID, EmpID, )
+		try:
+			cursor.execute(sql, params)
+		except Exception as e:
+			print(e)
 
 		# Fetch the return value (either 1, 2, or 3)
 		return_value = cursor.fetchone()
@@ -255,33 +242,86 @@ class BarcodeApp(QMainWindow, partsdialog.Ui_MainWindow):
 
 		self.lcdTime.display(text)
 
-	# Function for showing label value on change.
-	def show_lbl_qty(self):
+	def btn1Click(self):
 
-		qtyText = str(self.slQty.value())
-		self.lblQty.setText(qtyText)
+		QtyClicked = '1'
+		self.show_lbl_qty(QtyClicked)
+
+	def btn2Click(self):
+
+		QtyClicked = '2'
+		self.show_lbl_qty(QtyClicked)
+
+	def btn3Click(self):
+
+		QtyClicked = '3'
+		self.show_lbl_qty(QtyClicked)
+
+	def btn4Click(self):
+
+		QtyClicked = '4'
+		self.show_lbl_qty(QtyClicked)
+
+	def btn5Click(self):
+
+		QtyClicked = '5'
+		self.show_lbl_qty(QtyClicked)
+
+	def btn6Click(self):
+
+		QtyClicked = '6'
+		self.show_lbl_qty(QtyClicked)
+
+	def btn7Click(self):
+
+		QtyClicked = '7'
+		self.show_lbl_qty(QtyClicked)
+
+	def btn8Click(self):
+
+		QtyClicked = '8'
+		self.show_lbl_qty(QtyClicked)
+
+	def btn9Click(self):
+
+		QtyClicked = '9'
+		self.show_lbl_qty(QtyClicked)
+
+	def btn0Click(self):
+
+		QtyClicked = '0'
+		self.show_lbl_qty(str(QtyClicked))
+
+	# Function for showing label value on change.
+	def show_lbl_qty(self, QtyClicked):
+		global Quantity
+		newNumber = self.lblQty.text() + str(QtyClicked)
+		self.lblQty.setText(newNumber)
+		Quantity = int(self.lblQty.text())
+
+	def clearqtyclick(self):
+		self.lblQty.setText('')
 
 	# Function for validating data.
 	def validate(self):
 
-		if self.txtWOID.text() == "" and self.txtPart.text() == "":
-			BarcodeApp.message = "Error: Please re-scan WOID and Part"
+		if self.txtWOBOMID.text() == "":
+			BarcodeApp.message = "Error: Please re-scan WOBOMID."
 			self.call_msg_timer()
-			self.txtPart.clear()
-			self.txtWOID.clear()
-			self.txtWOID.setFocus()
+			self.txtWOBOMID.clear()
+			self.txtWOBOMID.setFocus()
 			return False
-		elif self.txtWOID.text() == "":
-			BarcodeApp.message = "Error: Please re-scan WOID."
+		elif self.lblQty.text() == "":
+			BarcodeApp.message = "Error: Please select a quantity, 30 or fewer."
 			self.call_msg_timer()
-			self.txtWOID.clear()
-			self.txtWOID.setFocus()
+			self.lblQty.clear()
+			self.lblQty.setFocus()
 			return False
-		elif self.txtPart.text() == "":
-			BarcodeApp.message = "Error: Please re-scan part."
+		elif Quantity > 30 or Quantity is None:
+			BarcodeApp.message = "Error: Please select a quantity, 30 or fewer."
 			self.call_msg_timer()
-			self.txtPart.clear()
-			self.txtPart.setFocus()
+			self.lblQty.clear()
+			self.lblQty.setFocus()
 			return False
 
 	# This method calls the class from any other method using it's
@@ -293,13 +333,12 @@ class BarcodeApp(QMainWindow, partsdialog.Ui_MainWindow):
 
 	# Function for clearing form and resetting focus to on load parameters.
 	def clearForm(self):
-		self.txtWOID.clear()
-		self.txtPart.clear()
+		self.txtWOBOMID.clear()
 		self.txtClockID.clear()
 		self.txtClockID.setFocus()
-		self.slQty.setValue(1)
 		self.lblWOIDReturn.setText('')
 		self.lblPartReturn.setText('')
+		self.lblQty.setText('')
 			
 # New class for a messagebox timer, so employees don't have to click the OK button.
 # I display any message for 10 seconds by default.
